@@ -183,42 +183,9 @@ If there are **errors** (not warnings), fix them:
 Warnings about missing other providers (checkbox-provider-base, etc.) are
 expected and can be ignored.
 
-### Step 9 — Commit and push
+### Step 9 — (Reserved for final commit — see Step 16)
 
-Stage only the new/modified files for this domain:
-
-```bash
-cd ~/canonical/workspace/checkbox-provider-kprovider
-git add bin/<domain>_*_trace_test.py units/<domain>-jobs.pxu units/test-plan.pxu
-```
-
-Check what is staged before committing:
-```bash
-git status
-git diff --cached --stat
-```
-
-Commit with a descriptive message:
-```bash
-git commit -m "Add <domain> subsystem checkbox test jobs
-
-Import bpftrace workflow test scripts from kernel_readdoc and create
-checkbox job definitions for the <domain> subsystem.
-
-Jobs added:
-$(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
-"
-```
-
-Then push:
-```bash
-git push
-```
-
-If `git push` fails because there is no upstream branch yet, run:
-```bash
-git push --set-upstream origin $(git branch --show-current)
-```
+Do **not** commit or push yet. Proceed directly to Phase 2.
 
 ---
 
@@ -266,19 +233,9 @@ Repeat Steps 12–13 for **each target** that succeeded in Step 11.
 
 ### Step 12 — Install/update the provider on the target
 
-For each `<resolved_ip>`, SSH in and pull the latest provider:
+For each `<resolved_ip>`, sync the local provider tree to the target using rsync
+(the changes have not been pushed to git yet):
 
-```bash
-ssh ubuntu@<resolved_ip> "
-  if [ ! -d ~/checkbox-provider-kprovider ]; then
-    git clone $(cd ~/canonical/workspace/checkbox-provider-kprovider && git remote get-url origin) ~/checkbox-provider-kprovider
-  else
-    git -C ~/checkbox-provider-kprovider pull
-  fi
-"
-```
-
-If `git remote get-url origin` fails (no remote set), copy the provider directly:
 ```bash
 rsync -av --exclude='.git' ~/canonical/workspace/checkbox-provider-kprovider/ ubuntu@<resolved_ip>:~/checkbox-provider-kprovider/
 ```
@@ -331,7 +288,46 @@ cd ~/canonical/workspace/checkbox-provider-kprovider && python3 manage.py valida
 
 ### Step 16 — Re-run until clean
 
-Repeat Steps 9 (commit+push), 12–13 (deploy+run) and 14–15 (analyse+fix) until all jobs either PASS or SKIP with a clear hardware-absent reason.
+Repeat Steps 12–13 (deploy+run) and 14–15 (analyse+fix) until all jobs either
+PASS or SKIP with a clear hardware-absent reason. Do **not** commit during
+this loop.
+
+### Step 16b — Commit and push
+
+Once all jobs pass or skip cleanly on every target, commit and push:
+
+```bash
+cd ~/canonical/workspace/checkbox-provider-kprovider
+git add bin/<domain>_*_trace_test.py units/<domain>-jobs.pxu units/test-plan.pxu
+```
+
+Check what is staged before committing:
+```bash
+git status
+git diff --cached --stat
+```
+
+Commit with a descriptive message:
+```bash
+git commit -m "Add <domain> subsystem checkbox test jobs
+
+Import bpftrace workflow test scripts from kernel_readdoc and create
+checkbox job definitions for the <domain> subsystem.
+
+Jobs added:
+$(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
+"
+```
+
+Then push:
+```bash
+git push
+```
+
+If `git push` fails because there is no upstream branch yet, run:
+```bash
+git push --set-upstream origin $(git branch --show-current)
+```
 
 ### Step 17 — Final report
 
