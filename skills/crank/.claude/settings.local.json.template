@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cranky chroot *)",
+      "Bash(cranky checkout *)",
+      "Read(//<YOUR_HOME>/canonical/kernel/ubuntu/<SERIES>/<PACKAGE>/linux-main/**)",
+      "Bash(cranky fix *)",
+      "Bash(cranky rebase *)",
+      "Bash(cranky open *)",
+      "Bash(cranky review-master-changes *)",
+      "Bash(cranky link-tb *)",
+      "Bash(cranky update-dkms-versions *)",
+      "Bash(cranky close *)",
+      "Bash(cranky update-dependents *)",
+      "Bash(cranky tags *)",
+      "Bash(tty)",
+      "Bash(GPG_TTY=$(tty) cranky tags -f)",
+      "Bash(cranky verify-release-ready *)",
+      "Read(//<YOUR_HOME>/canonical/kernel/ubuntu/<SERIES>/<PACKAGE>/**)",
+      "Bash(cranky pull-source *)",
+      "Bash(cranky build-sources *)",
+      "Bash(cranky review *)",
+      "Bash(cranky push-review *)"
+    ]
+  }
+}
