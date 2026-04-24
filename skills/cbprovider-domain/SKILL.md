@@ -228,16 +228,16 @@ git push --set-upstream origin $(git branch --show-current)
 
 Read the config file:
 ```bash
-cat ~/canonical/workspace/hwe-tools/inject.conf
+cat ~/.claude/skills/cbprovider-domain/references/inject.conf
 ```
 
 Parse all non-empty `TARGET=` lines (ignore comments and blank values):
 ```bash
-TARGETS=$(grep -E '^TARGET=.+' ~/canonical/workspace/hwe-tools/inject.conf | cut -d'=' -f2 | tr -d '[:space:]')
+TARGETS=$(grep -E '^TARGET=.+' ~/.claude/skills/cbprovider-domain/references/inject.conf | cut -d'=' -f2 | tr -d '[:space:]')
 ```
 
 If the list is empty or the file does not exist, stop and tell the user:
-> "`inject.conf` has no TARGET entries. Edit `~/canonical/workspace/hwe-tools/inject.conf` and add one or more `TARGET=<IP or CID>` lines, then re-run."
+> "`inject.conf` has no TARGET entries. Edit `~/.claude/skills/cbprovider-domain/references/inject.conf` and add one or more `TARGET=<IP or CID>` lines, then re-run."
 
 Print the resolved list so the user can confirm:
 ```
@@ -248,7 +248,7 @@ Targets: <target1>, <target2>, ...
 
 For each target in `TARGETS`, run:
 ```bash
-bash ~/canonical/workspace/hwe-tools/inject.sh <target>
+bash ~/.claude/skills/cbprovider-domain/scripts/inject.sh <target>
 ```
 
 - If a target fails, report the error and skip it — continue with remaining targets.
