@@ -1,0 +1,24 @@
+{
+  "allow": [
+    "Bash(ls *)",
+    "Bash(find *)",
+    "Bash(mkdir *)",
+    "Bash(cat *)",
+    "Bash(cd ~/canonical/workspace/kernel_readdoc *)",
+    "Bash(cd ~/canonical/workspace/checkbox-provider-kprovider *)",
+    "Bash(git *)",
+    "Bash(python3 *)",
+    "Bash(python3 -m py_compile *)",
+    "Bash(timeout *)",
+    "Bash(ssh *)",
+    "Bash(sshpass *)",
+    "Bash(scp *)",
+    "Bash(rsync *)",
+    "Bash(bash ~/.claude/skills/cbprovider-domain/scripts/*)",
+    "Bash(bash ~/.copilot/skills/cbprovider-domain/scripts/*)",
+    "Bash(chmod +x *)",
+    "Bash(cp *)",
+    "Bash(curl *)",
+    "Bash(grep *)"
+  ]
+}

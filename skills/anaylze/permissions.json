@@ -1,0 +1,11 @@
+{
+  "allow": [
+    "Bash(ls *)",
+    "Bash(find *)",
+    "Bash(mkdir *)",
+    "Bash(cat *)",
+    "Bash(cd ~/canonical/workspace/kernel_readdoc *)",
+    "Bash(git *)",
+    "Bash(python3 *)"
+  ]
+}

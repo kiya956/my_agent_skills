@@ -15,7 +15,7 @@ SCRIPT_DIR=$(dirname "$0")
 SSH_KEY="${HOME}/.ssh/id_rsa.pub"
 SSH_USER="ubuntu"
 SSH_PASS="insecure"
-SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
 HOTLAB_URL="http://f1.cctu.space/tel-hotlab?show_offline=1"
 CERT_URL_BASE="https://certification.canonical.com/hardware"
 
@@ -69,7 +69,7 @@ lookup_cid() {
 
     echo "Looking up CID $cid on $HOTLAB_URL..." >&2
 
-    if ! curl -s -o "$tmpfile" "$HOTLAB_URL"; then
+    if ! curl -s --connect-timeout 10 --max-time 30 -o "$tmpfile" "$HOTLAB_URL"; then
         print_err "Failed to fetch hotlab page"
         rm -f "$tmpfile"
         exit 1
@@ -107,7 +107,7 @@ inject_key() {
 
     print_info "Checking if key already exists on $SSH_USER@$target_ip..."
 
-    if sshpass -p "$SSH_PASS" ssh $SSH_OPTS "$SSH_USER@$target_ip" "grep -qF '$pub_key_content' ~/.ssh/authorized_keys 2>/dev/null"; then
+    if timeout 30 sshpass -p "$SSH_PASS" ssh $SSH_OPTS "$SSH_USER@$target_ip" "grep -qF '$pub_key_content' ~/.ssh/authorized_keys 2>/dev/null"; then
         print_info "✓ SSH key already exists on $target_ip"
         print_info "You can connect with: ssh $SSH_USER@$target_ip"
         return 0
@@ -117,7 +117,7 @@ inject_key() {
 
     local remote_cmd="mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '$pub_key' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
 
-    if sshpass -p "$SSH_PASS" ssh $SSH_OPTS "$SSH_USER@$target_ip" "$remote_cmd"; then
+    if timeout 30 sshpass -p "$SSH_PASS" ssh $SSH_OPTS "$SSH_USER@$target_ip" "$remote_cmd"; then
         print_info "✓ SSH key successfully injected to $target_ip"
         print_info "You can now connect with: ssh $SSH_USER@$target_ip"
         return 0

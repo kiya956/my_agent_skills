@@ -213,12 +213,12 @@ Targets: <target1>, <target2>, ...
 
 ### Step 11 — Run inject.sh for each target
 
-For each target in `TARGETS`, run:
+For each target in `TARGETS`, run with a timeout to prevent hangs:
 ```bash
-bash ~/.claude/skills/cbprovider-domain/scripts/inject.sh <target>
+timeout 120 bash ~/.claude/skills/cbprovider-domain/scripts/inject.sh <target>
 ```
 
-- If a target fails, report the error and skip it — continue with remaining targets.
+- If a target fails or times out (exit code 124), report the error and skip it — continue with remaining targets.
 - After processing all targets, report which succeeded and which failed.
 - If **all** targets failed, stop and do not proceed to Phase 3.
 - Note the resolved IP address printed by inject.sh for each target (used in Phase 3).
@@ -237,22 +237,42 @@ For each `<resolved_ip>`, sync the local provider tree to the target using rsync
 (the changes have not been pushed to git yet):
 
 ```bash
-rsync -av --exclude='.git' ~/canonical/workspace/checkbox-provider-kprovider/ ubuntu@<resolved_ip>:~/checkbox-provider-kprovider/
+rsync -av --timeout=60 -e "ssh -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no" --exclude='.git' ~/canonical/workspace/checkbox-provider-kprovider/ ubuntu@<resolved_ip>:~/checkbox-provider-kprovider/
 ```
+
+If rsync hangs for more than 60 seconds on any I/O, it will timeout automatically.
 
 ### Step 13 — Run the domain test plan
 
+**Important: All remote SSH commands MUST use timeouts to prevent hangs.**
+
+Define SSH options for all remote commands in this step:
 ```bash
-ssh -t ubuntu@<resolved_ip> "
+SSH_REMOTE_OPTS="-o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
+```
+
+Install the provider (timeout 120s):
+```bash
+timeout 120 ssh $SSH_REMOTE_OPTS ubuntu@<resolved_ip> "
   cd ~/checkbox-provider-kprovider
   sudo python3 manage.py develop
+"
+```
+
+Run the test plan (timeout 600s — 10 minutes max):
+```bash
+timeout 600 ssh $SSH_REMOTE_OPTS ubuntu@<resolved_ip> "
+  cd ~/checkbox-provider-kprovider
   sudo checkbox-cli run kprovider-<domain> 2>&1 | tee /tmp/kprovider-<domain>-results.txt
 "
 ```
 
-Fetch the results back:
+If `timeout` kills the command (exit code 124), report which target timed out
+and continue with remaining targets — do not hang waiting.
+
+Fetch the results back (timeout 60s):
 ```bash
-scp ubuntu@<resolved_ip>:/tmp/kprovider-<domain>-results.txt /tmp/kprovider-<domain>-<resolved_ip>-results.txt
+timeout 60 scp -o ConnectTimeout=15 -o StrictHostKeyChecking=no ubuntu@<resolved_ip>:/tmp/kprovider-<domain>-results.txt /tmp/kprovider-<domain>-<resolved_ip>-results.txt
 cat /tmp/kprovider-<domain>-<resolved_ip>-results.txt
 ```
 
@@ -290,7 +310,8 @@ cd ~/canonical/workspace/checkbox-provider-kprovider && python3 manage.py valida
 
 Repeat Steps 12–13 (deploy+run) and 14–15 (analyse+fix) until all jobs either
 PASS or SKIP with a clear hardware-absent reason. Do **not** commit during
-this loop.
+this loop. If a target consistently times out after 2 retries, skip it and
+note the timeout in the final report.
 
 ### Step 16b — Commit and push
 
