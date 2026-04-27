@@ -313,46 +313,68 @@ PASS or SKIP with a clear hardware-absent reason. Do **not** commit during
 this loop. If a target consistently times out after 2 retries, skip it and
 note the timeout in the final report.
 
-### Step 16b — Commit and push
+### Step 16b — Create branch, commit, push, and open PR
 
-Once all jobs pass or skip cleanly on every target, commit and push:
+Once all jobs pass or skip cleanly on every target, create a feature branch,
+commit the changes, push, and open a pull request to `main`.
 
-```bash
-cd ~/canonical/workspace/checkbox-provider-kprovider
-git add bin/<domain>_*_trace_test.py units/<domain>-jobs.pxu units/test-plan.pxu
-```
+1. **Switch to a new branch** (from `main`):
+   ```bash
+   cd ~/canonical/workspace/checkbox-provider-kprovider
+   git checkout main
+   git pull origin main
+   BRANCH_NAME="add-<domain>-kprovider-jobs"
+   git checkout -b "$BRANCH_NAME"
+   ```
 
-Check what is staged before committing:
-```bash
-git status
-git diff --cached --stat
-```
+2. **Stage the new/modified files**:
+   ```bash
+   git add bin/<domain>_*_trace_test.py units/<domain>-jobs.pxu units/test-plan.pxu
+   ```
 
-Commit with a descriptive message:
-```bash
-git commit -m "Add <domain> subsystem checkbox test jobs
+3. **Review what is staged**:
+   ```bash
+   git status
+   git diff --cached --stat
+   ```
 
-Import bpftrace workflow test scripts from kernel_readdoc and create
-checkbox job definitions for the <domain> subsystem.
+4. **Commit with a descriptive message**:
+   ```bash
+   git commit -m "Add <domain> subsystem checkbox test jobs
 
-Jobs added:
-$(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
-"
-```
+   Import bpftrace workflow test scripts from kernel_readdoc and create
+   checkbox job definitions for the <domain> subsystem.
 
-Then push:
-```bash
-git push
-```
+   Jobs added:
+   $(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
+   "
+   ```
 
-If `git push` fails because there is no upstream branch yet, run:
-```bash
-git push --set-upstream origin $(git branch --show-current)
-```
+5. **Push the branch**:
+   ```bash
+   git push --set-upstream origin "$BRANCH_NAME"
+   ```
+
+6. **Create a pull request** to `main`:
+   ```bash
+   gh pr create \
+     --base main \
+     --title "Add <domain> subsystem checkbox test jobs" \
+     --body "Import bpftrace workflow test scripts from kernel_readdoc and create checkbox job definitions for the <domain> subsystem.
+
+   ## Jobs added
+   $(grep '^id: kprovider' ~/canonical/workspace/checkbox-provider-kprovider/units/<domain>-jobs.pxu | sed 's/^id: /- /')
+
+   ## Test results
+   All jobs PASS or SKIP (hardware-absent) on target machines.
+   See Step 17 final report for per-target breakdown."
+   ```
+
+   Print the PR URL so the user can review it.
 
 ### Step 17 — Final report
 
-Print a summary including the git commit hash:
+Print a summary including the git commit hash and PR URL:
 
 ```
 ## Results for domain: <domain>
@@ -381,3 +403,5 @@ Print a summary including the git commit hash:
 ```
 
 Note any hardware requirements (e.g. "i915 job requires Intel GPU with i915 module").
+
+Include the PR URL from Step 16b so the user can review and merge.
