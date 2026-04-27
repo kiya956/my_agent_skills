@@ -193,18 +193,30 @@ Do **not** commit or push yet. Proceed directly to Phase 2.
 
 ### Step 10 — Read target list from config
 
+First, detect the skill directory (supports both Claude Code and Copilot CLI):
+```bash
+if [ -d ~/.copilot/skills/cbprovider-domain ]; then
+  SKILL_DIR=~/.copilot/skills/cbprovider-domain
+elif [ -d ~/.claude/skills/cbprovider-domain ]; then
+  SKILL_DIR=~/.claude/skills/cbprovider-domain
+else
+  echo "ERROR: cbprovider-domain skill not installed in ~/.copilot/skills/ or ~/.claude/skills/"
+  exit 1
+fi
+```
+
 Read the config file:
 ```bash
-cat ~/.claude/skills/cbprovider-domain/references/inject.conf
+cat "$SKILL_DIR/references/inject.conf"
 ```
 
 Parse all non-empty `TARGET=` lines (ignore comments and blank values):
 ```bash
-TARGETS=$(grep -E '^TARGET=.+' ~/.claude/skills/cbprovider-domain/references/inject.conf | cut -d'=' -f2 | tr -d '[:space:]')
+TARGETS=$(grep -E '^TARGET=.+' "$SKILL_DIR/references/inject.conf" | cut -d'=' -f2 | tr -d '[:space:]')
 ```
 
 If the list is empty or the file does not exist, stop and tell the user:
-> "`inject.conf` has no TARGET entries. Edit `~/.claude/skills/cbprovider-domain/references/inject.conf` and add one or more `TARGET=<IP or CID>` lines, then re-run."
+> "`inject.conf` has no TARGET entries. Edit `$SKILL_DIR/references/inject.conf` and add one or more `TARGET=<IP or CID>` lines, then re-run."
 
 Print the resolved list so the user can confirm:
 ```
@@ -215,7 +227,7 @@ Targets: <target1>, <target2>, ...
 
 For each target in `TARGETS`, run with a timeout to prevent hangs:
 ```bash
-timeout 120 bash ~/.claude/skills/cbprovider-domain/scripts/inject.sh <target>
+timeout 120 bash "$SKILL_DIR/scripts/inject.sh" <target>
 ```
 
 - If a target fails or times out (exit code 124), report the error and skip it — continue with remaining targets.
