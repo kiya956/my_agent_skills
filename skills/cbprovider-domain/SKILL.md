@@ -5,33 +5,49 @@ description: Create checkbox test cases from kernel_readdoc for a specific kerne
 
 # cbprovider-domain
 
-Generates checkbox provider test jobs for a specific kernel subsystem by
+Generates and debugs checkbox provider test jobs for a specific kernel subsystem by
 importing Python bpftrace test scripts from `~/canonical/workspace/kernel_readdoc`
 into `~/canonical/workspace/checkbox-provider-kprovider`.
 
 ## Usage
 
 ```
-/cbprovider-domain <domain>
+/cbprovider-domain <domain>                              # Mode A: create/update (default)
+/cbprovider-domain create <domain>                       # Mode A: explicit create/update
+/cbprovider-domain debug <domain> <ip> <description...>  # Mode B: debug on target device
 ```
 
 **Examples:**
 ```
 /cbprovider-domain drm
-/cbprovider-domain sound
-/cbprovider-domain usb
-/cbprovider-domain acpi
+/cbprovider-domain create sound
+/cbprovider-domain debug drm 10.102.180.54 bridge test shows all FAIL but result passes
 ```
 
 ## Parameters
 
 | Parameter | Description |
 |---|---|
-| `domain` | Kernel subsystem name to generate test cases for (e.g. `drm`, `sound`, `usb`) |
+| `function` | (Optional) `create` or `debug`. Defaults to `create` if omitted. |
+| `domain` | Kernel subsystem name (e.g. `drm`, `sound`, `usb`, `acpi`) |
+| `ip` | (debug only) Target device IP address |
+| `description` | (debug only) Free-text description of the issue — everything after the IP is joined as the description, no quotes required |
 
 ---
 
-## Execution Instructions
+## Mode Dispatch
+
+**Read the first argument to decide the mode:**
+
+- If the first argument is `debug` → run **Mode B — Debug** (Steps D1–D10 below)
+- If the first argument is `create` → run **Mode A — Create/Update** (Steps 1–17 below)
+- If the first argument is neither `debug` nor `create` → treat it as `<domain>` and run **Mode A — Create/Update**
+
+**Only run one mode per invocation. Do not mix modes.**
+
+---
+
+# Mode A — Create / Update
 
 Follow every step in order. Do not skip steps. Stop and report clearly if any step fails.
 
@@ -313,69 +329,46 @@ PASS or SKIP with a clear hardware-absent reason. Do **not** commit during
 this loop. If a target consistently times out after 2 retries, skip it and
 note the timeout in the final report.
 
-### Step 16b — Create branch, commit, push, and open PR
+### Step 16b — Commit and push
 
-Once all jobs pass or skip cleanly on every target, create a feature branch,
-commit the changes, push, and open a pull request to `main`.
+Once all jobs pass or skip cleanly on every target, commit and push:
 
-1. **Switch to a new branch** (from `main`):
-   ```bash
-   cd ~/canonical/workspace/checkbox-provider-kprovider
-   git checkout main
-   git pull origin main
-   BRANCH_NAME="add-<domain>-kprovider-jobs"
-   git checkout -b "$BRANCH_NAME"
-   ```
+```bash
+cd ~/canonical/workspace/checkbox-provider-kprovider
+git add bin/<domain>_*_trace_test.py units/<domain>-jobs.pxu units/test-plan.pxu
+```
 
-2. **Stage the new/modified files**:
-   ```bash
-   git add bin/<domain>_*_trace_test.py units/<domain>-jobs.pxu units/test-plan.pxu
-   ```
+Check what is staged before committing:
+```bash
+git status
+git diff --cached --stat
+```
 
-3. **Review what is staged**:
-   ```bash
-   git status
-   git diff --cached --stat
-   ```
+Commit with a descriptive message:
+```bash
+git commit -m "Add <domain> subsystem checkbox test jobs
 
-4. **Commit with a descriptive message**:
-   ```bash
-   git commit -m "Add <domain> subsystem checkbox test jobs
+Import bpftrace workflow test scripts from kernel_readdoc and create
+checkbox job definitions for the <domain> subsystem.
 
-   Import bpftrace workflow test scripts from kernel_readdoc and create
-   checkbox job definitions for the <domain> subsystem.
+Jobs added:
+$(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
+"
+```
 
-   Jobs added:
-   $(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
-   "
-   ```
+Then push:
+```bash
+git push
+```
 
-5. **Push the branch**:
-   ```bash
-   git push --set-upstream origin "$BRANCH_NAME"
-   ```
-
-6. **Create a pull request** to `main`:
-   ```bash
-   gh pr create \
-     --base main \
-     --title "Add <domain> subsystem checkbox test jobs" \
-     --body "Import bpftrace workflow test scripts from kernel_readdoc and create checkbox job definitions for the <domain> subsystem.
-
-   ## Jobs added
-   $(grep '^id: kprovider' ~/canonical/workspace/checkbox-provider-kprovider/units/<domain>-jobs.pxu | sed 's/^id: /- /')
-
-   ## Test results
-   All jobs PASS or SKIP (hardware-absent) on target machines.
-   See Step 17 final report for per-target breakdown."
-   ```
-
-   Print the PR URL so the user can review it.
+If `git push` fails because there is no upstream branch yet, run:
+```bash
+git push --set-upstream origin $(git branch --show-current)
+```
 
 ### Step 17 — Final report
 
-Provide how to run test on devices
-Print a summary including the git commit hash and PR URL:
+Print a summary including the git commit hash:
 
 ```
 ## Results for domain: <domain>
@@ -405,4 +398,235 @@ Print a summary including the git commit hash and PR URL:
 
 Note any hardware requirements (e.g. "i915 job requires Intel GPU with i915 module").
 
-Include the PR URL from Step 16b so the user can review and merge.
+---
+
+# Mode B — Debug
+
+Debug an existing domain test on a specific target device. SSH to the target,
+run tests, analyze failures against the user's description, apply fixes, and
+re-test until clean.
+
+Follow every step in order. Do not skip steps. Stop and report clearly if any step fails.
+
+**Important: All remote SSH commands MUST use timeouts to prevent hangs.**
+
+Define SSH options for all remote commands in this mode:
+```bash
+SSH_REMOTE_OPTS="-o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
+```
+
+### Step D1 — Parse parameters
+
+Parse the invocation arguments:
+- `domain` = second argument (kernel subsystem: drm, sound, usb, etc.)
+- `ip` = third argument (target device IP address)
+- `description` = everything from the fourth argument onward, joined with spaces
+
+Validate:
+- `domain` must be non-empty
+- `ip` must look like an IPv4 address (digits and dots)
+- `description` may be empty (user just wants to run and debug)
+
+Print the parsed parameters:
+```
+Debug mode:
+  Domain:      <domain>
+  Target IP:   <ip>
+  Description: <description>
+```
+
+### Step D2 — SSH connectivity and prerequisites
+
+Test SSH connectivity with a timeout:
+```bash
+timeout 10 ssh $SSH_REMOTE_OPTS ubuntu@<ip> "echo ok" 2>&1
+```
+
+**If SSH auth fails** (permission denied, not key-auth connection refused):
+- Attempt to inject SSH key automatically:
+  ```bash
+  timeout 120 bash ~/.copilot/skills/cbprovider-domain/scripts/inject.sh <ip>
+  ```
+- If inject succeeds, retry the SSH test.
+- If inject also fails, stop and tell the user to set up SSH access manually.
+
+**If SSH is unreachable** (timeout, connection refused): stop and report the target is offline.
+
+Once SSH works, check generic prerequisites on the target:
+```bash
+timeout 30 ssh $SSH_REMOTE_OPTS ubuntu@<ip> "
+  echo '=== bpftrace ==='
+  which bpftrace 2>/dev/null || echo 'MISSING'
+  echo '=== checkbox-cli ==='
+  which checkbox-cli 2>/dev/null || echo 'MISSING'
+  echo '=== kernel modules ==='
+  lsmod | head -20
+  echo '=== DRM devices ==='
+  ls /dev/dri/ 2>/dev/null || echo 'none'
+"
+```
+
+If `bpftrace` or `checkbox-cli` is missing, report and stop.
+
+### Step D3 — Verify local provider and test plan exist
+
+Check that the local provider has the domain:
+```bash
+ls ~/canonical/workspace/checkbox-provider-kprovider/units/<domain>-jobs.pxu 2>/dev/null
+grep "id: kprovider-<domain>" ~/canonical/workspace/checkbox-provider-kprovider/units/test-plan.pxu
+```
+
+If either is missing:
+- Report: "Domain `<domain>` does not have provider jobs yet. Run `/cbprovider-domain create <domain>` first."
+- Stop.
+
+Also check that the provider is installed on the target:
+```bash
+timeout 30 ssh $SSH_REMOTE_OPTS ubuntu@<ip> "checkbox-cli list-bootstrapped com.canonical.certification::kprovider-<domain> 2>&1"
+```
+
+If the test plan is not listed on the target, deploy first (jump to Step D5 deploy substep, then return here).
+
+### Step D4 — Run the domain test plan on target
+
+Deploy the latest local provider to the target:
+```bash
+rsync -av --timeout=60 -e "ssh $SSH_REMOTE_OPTS" --exclude='.git' \
+  ~/canonical/workspace/checkbox-provider-kprovider/ \
+  ubuntu@<ip>:~/checkbox-provider-kprovider/
+```
+
+Install/update the provider:
+```bash
+timeout 120 ssh $SSH_REMOTE_OPTS ubuntu@<ip> "
+  cd ~/checkbox-provider-kprovider
+  sudo python3 manage.py develop
+"
+```
+
+Run the test plan (timeout 600s — 10 minutes max):
+```bash
+timeout 600 ssh $SSH_REMOTE_OPTS ubuntu@<ip> "
+  sudo checkbox-cli run com.canonical.certification::kprovider-<domain> 2>&1
+" | tee /tmp/kprovider-debug-<domain>-<ip>.txt
+```
+
+If `timeout` kills the command (exit code 124), report the timeout and stop.
+
+### Step D5 — Analyze results against user description
+
+Parse the test output for:
+- Each job's **Outcome** (passed / failed / cannot be started)
+- Per-step `[PASS]` / `[FAIL]` / `[SKIP]` within each job
+- Python tracebacks or bpftrace errors
+- Exit codes
+
+Cross-reference with the user's `<description>`:
+- Does the user's reported problem match what was observed?
+- Are there additional issues not mentioned in the description?
+
+Read the relevant local files to understand the test logic:
+1. `~/canonical/workspace/checkbox-provider-kprovider/units/<domain>-jobs.pxu` — job definitions, guards, command wrappers
+2. `~/canonical/workspace/checkbox-provider-kprovider/bin/<domain>_*_trace_test.py` — the actual test scripts
+
+For each failing or suspicious job, identify:
+- **Script-level issue**: exit code not matching results, missing hardware detection, wrong probe names
+- **pxu-level issue**: missing resource guard, wrong command, incorrect `requires:` usage
+- **Environment issue**: hardware not present, module not loaded, bpftrace version too old
+- **False positive**: test prints FAIL but exits 0 (checkbox reports as pass)
+- **False negative**: test skips when it should run
+
+### Step D6 — Apply fixes locally
+
+For each identified issue, edit the relevant files in `~/canonical/workspace/checkbox-provider-kprovider/`:
+
+- Fix scripts in `bin/`
+- Fix job definitions in `units/`
+- Fix test plans in `units/test-plan.pxu` if needed
+
+After each edit, validate:
+```bash
+python3 -m py_compile ~/canonical/workspace/checkbox-provider-kprovider/bin/<script>
+cd ~/canonical/workspace/checkbox-provider-kprovider && python3 manage.py validate 2>&1
+```
+
+### Step D7 — Re-deploy and re-test
+
+Repeat Step D4 (deploy + run) with the fixed code.
+
+### Step D8 — Iterate (max 3 cycles)
+
+If there are still failures after re-test:
+1. Go back to Step D5 (analyze) → D6 (fix) → D7 (re-test)
+2. Track the cycle count
+
+**Stop after 3 fix/retest cycles.** If issues remain:
+- Report the unresolved failures clearly
+- Distinguish between code bugs (fixable) vs environment/hardware limitations (not fixable)
+- Do NOT continue looping
+
+### Step D9 — Commit
+
+Once all jobs pass or skip with clear hardware-absent reasons:
+
+```bash
+cd ~/canonical/workspace/checkbox-provider-kprovider
+git add -A
+git status
+git diff --cached --stat
+```
+
+Commit with a descriptive message explaining what was debugged and fixed:
+```bash
+git commit -m "fix(<domain>): <concise description of what was fixed>
+
+<Longer explanation of root cause and fix>
+
+Tested on: <ip>
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+```
+
+Then push:
+```bash
+git push
+```
+
+If `git push` fails because there is no upstream branch yet:
+```bash
+git push --set-upstream origin $(git branch --show-current)
+```
+
+### Step D10 — Final report
+
+Print a summary:
+
+```
+## Debug Results for domain: <domain>
+
+### Target: <ip>
+### Problem reported: <description>
+
+### Root cause
+<What was wrong and why>
+
+### Fixes applied
+| File | Change |
+|---|---|
+| bin/<script>.py | <what was changed> |
+| units/<domain>-jobs.pxu | <what was changed, if any> |
+
+### Final test results
+| Job ID | Result | Notes |
+|---|---|---|
+| kprovider/<domain>/... | PASS | |
+| kprovider/<domain>/... | SKIP | <reason> |
+
+### Unresolved issues (if any)
+| Job ID | Issue | Reason |
+|---|---|---|
+| kprovider/<domain>/... | <issue> | environment / hardware limitation |
+
+### Commit
+<commit hash>
+```

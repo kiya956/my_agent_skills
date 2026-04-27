@@ -7,7 +7,7 @@ description: End-to-end pipeline that analyzes a kernel subsystem domain and the
 
 Orchestrates a full documentation-to-test pipeline for a kernel subsystem domain:
 1. Runs the **analyze** skill to document the domain with ASCII diagrams and bpftrace scripts
-2. Runs the **cbprovider-domain** skill to generate checkbox provider test cases from the results
+2. Runs the **cbprovider-domain** skill to create/update checkbox provider test cases from the results
 
 ## Usage
 
@@ -52,7 +52,11 @@ to ensure checkbox test cases exist for the documented content.
 
 ### Phase 2 — Generate checkbox test cases
 
-Invoke the **cbprovider-domain** skill for `<domain>`.
+Invoke the **cbprovider-domain** skill in **create** mode for `<domain>`:
+
+```
+/cbprovider-domain create <domain>
+```
 
 This will:
 - Locate the Python bpftrace test scripts created in Phase 1
@@ -60,12 +64,12 @@ This will:
 - Create pxu job definitions in `units/<domain>-jobs.pxu`
 - Update the test plan
 - Validate the provider
-- Deploy and run tests on target machines
+- Deploy and run tests on all target machines (from inject.conf)
 - Commit and push the results
 
 ### Phase 3 — Final summary
 
-After both phases complete, print a combined summary:
+After all phases complete, print a combined summary:
 
 ```
 ## scan-and-test complete for domain: <domain>
