@@ -374,6 +374,7 @@ commit the changes, push, and open a pull request to `main`.
 
 ### Step 17 — Final report
 
+Provide how to run test on devices
 Print a summary including the git commit hash and PR URL:
 
 ```
