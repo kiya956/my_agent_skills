@@ -51,17 +51,49 @@ into `~/canonical/workspace/checkbox-provider-kprovider`.
 
 Follow every step in order. Do not skip steps. Stop and report clearly if any step fails.
 
-### Step 1 — Locate test scripts for the domain
+### Step 0 — Resolve kernel hierarchy path
 
-Search `~/canonical/workspace/kernel_readdoc` for Python test files related to `<domain>`:
+The `kernel_readdoc` repository mirrors the Linux kernel source tree structure.
+Before doing anything else, resolve the user's `<domain>` to its **kernel source path**.
 
 ```bash
-find ~/canonical/workspace/kernel_readdoc -type f -name "*.py" | grep -i "<domain>"
+find ~/canonical/workspace/kernel_readdoc -type d -name "<domain>" \
+  -not -path '*/.git/*' -not -path '*__pycache__*' 2>/dev/null
 ```
 
-Also try a broader search in case the domain maps to a subdirectory:
+This may return multiple matches (e.g. `net/` exists as both a top-level dir
+and under `drivers/net/`). Apply these resolution rules **in order**:
+
+1. If only one match → use it.
+2. If multiple matches → prefer the one with **more `.py` test files** underneath.
+3. If still tied → prefer the **deeper path** (more specific scope).
+
+Compute these canonical variables from the resolved path (use these everywhere
+in later steps instead of raw `<domain>`):
+
+| Variable | How to compute | Example (`drm`) | Example (`sound`) |
+|---|---|---|---|
+| `KERNEL_SOURCE_PATH` | Path relative to `kernel_readdoc/` root | `drivers/gpu/drm` | `sound` |
+| `KERNEL_PATH` | Strip leading `drivers/` if present; keep as-is for top-level dirs | `gpu/drm` | `sound` |
+| `KERNEL_PATH_DASHED` | Replace `/` with `-` in KERNEL_PATH | `gpu-drm` | `sound` |
+| `KERNEL_PATH_UNDERSCORED` | Replace `/` with `_` in KERNEL_PATH | `gpu_drm` | `sound` |
+| `PXU_FILE` | `units/<KERNEL_PATH_DASHED>-jobs.pxu` | `units/gpu-drm-jobs.pxu` | `units/sound-jobs.pxu` |
+| `TEST_PLAN_ID` | `kprovider-<KERNEL_PATH_DASHED>` | `kprovider-gpu-drm` | `kprovider-sound` |
+| `LEAF_CATEGORY` | `kprovider/<KERNEL_PATH>` | `kprovider/gpu/drm` | `kprovider/sound` |
+
+**Important: `drm` and `gpu` are NOT aliases.** They resolve to different scopes:
+- `drm` → `drivers/gpu/drm` → `KERNEL_PATH=gpu/drm`
+- `gpu` → `drivers/gpu` → `KERNEL_PATH=gpu`
+
+If resolution fails (no directory found), report it and stop.
+
+### Step 1 — Locate test scripts for the domain
+
+Search **within** the resolved `KERNEL_SOURCE_PATH` directory for Python test files:
+
 ```bash
-find ~/canonical/workspace/kernel_readdoc -type d | grep -i "<domain>"
+find ~/canonical/workspace/kernel_readdoc/<KERNEL_SOURCE_PATH> -type f -name "*.py" \
+  -not -path '*__pycache__*'
 ```
 
 Collect the full list of `.py` files found. If none are found, report that no
@@ -74,12 +106,25 @@ For each found file, read its header docstring to understand:
 
 ### Step 2 — Determine job IDs and script names
 
-For each script, derive:
-- A **bin script name**: `<domain>_<subdriver>_trace_test.py` (e.g. `drm_core_trace_test.py`)
-  - If there is only one script for the domain, use `<domain>_trace_test.py`
-  - If scripts are in subdirectories, use the subdirectory name as `<subdriver>`
-- A **job ID**: `kprovider/<domain>/<subdriver>` (e.g. `kprovider/drm/core`)
-  - If only one script, use `kprovider/<domain>`
+For each script, derive names from its **relative path below `KERNEL_SOURCE_PATH`**:
+
+- The **subdirectory name** below the domain root is the `<component>`.
+  If the script is directly in the domain root (not in a subdirectory),
+  treat the script's stem as the component.
+
+- A **bin script name**: `<KERNEL_PATH_UNDERSCORED>_<component>_trace_test.py`
+  - Example: `drm` domain, `i915/` subdir → `gpu_drm_i915_trace_test.py`
+  - Example: `sound` domain, single script → `sound_trace_test.py`
+  - If there is only one script for the domain, use `<KERNEL_PATH_UNDERSCORED>_trace_test.py`
+
+- A **job ID**: `kprovider/<KERNEL_PATH>/<component>`
+  - Example: `kprovider/gpu/drm/i915`, `kprovider/gpu/drm/core`
+  - If only one script, use `kprovider/<KERNEL_PATH>`
+
+Before copying, check for **bin name collisions** with existing scripts:
+```bash
+ls ~/canonical/workspace/checkbox-provider-kprovider/bin/<bin_script_name> 2>/dev/null
+```
 
 ### Step 3 — Fix known Python syntax issues before copying
 
@@ -126,7 +171,7 @@ determines the commit message later (Step 16b).
 ### Step 5 — Check for an existing pxu file for this domain
 
 ```bash
-ls ~/canonical/workspace/checkbox-provider-kprovider/units/<domain>-jobs.pxu 2>/dev/null
+ls ~/canonical/workspace/checkbox-provider-kprovider/units/<KERNEL_PATH_DASHED>-jobs.pxu 2>/dev/null
 ```
 
 If it already exists:
@@ -136,28 +181,53 @@ If it already exists:
 If it does not exist:
 - Record the action as **"Create"** for the pxu file.
 
-### Step 6 — Create or update units/<domain>-jobs.pxu
+Also check **all** existing pxu files for parent category definitions to avoid
+duplicates:
+```bash
+grep -r '^id: kprovider/' ~/canonical/workspace/checkbox-provider-kprovider/units/*.pxu 2>/dev/null
+```
 
-Create `~/canonical/workspace/checkbox-provider-kprovider/units/<domain>-jobs.pxu`.
+### Step 6 — Create or update the pxu file
+
+Create `~/canonical/workspace/checkbox-provider-kprovider/units/<KERNEL_PATH_DASHED>-jobs.pxu`.
 
 **Rules for pxu files (enforce all of these):**
 
-1. Start with a category unit:
+1. **Create category units for the full hierarchy path.**
+   For each level in `KERNEL_PATH`, create a category unit — but **only if it
+   is NOT already defined in another existing pxu file** (checked in Step 5).
+
+   Example for `KERNEL_PATH=gpu/drm`:
    ```
    unit: category
-   id: kprovider/<domain>
-   _name: <Domain> Subsystem
+   id: kprovider/gpu
+   _name: GPU Subsystem
+
+   unit: category
+   id: kprovider/gpu/drm
+   _name: DRM GPU Drivers
    ```
 
-2. For each job:
+   If `kprovider/gpu` is already defined in `gpu-jobs.pxu`, then only define
+   `kprovider/gpu/drm` in this file.
+
+   Example for `KERNEL_PATH=sound` (single level):
    ```
-   id: kprovider/<domain>/<subdriver>
+   unit: category
+   id: kprovider/sound
+   _name: Sound Subsystem
+   ```
+
+2. For each job, use the **leaf category** (`LEAF_CATEGORY`) and **hierarchical
+   job ID**:
+   ```
+   id: kprovider/<KERNEL_PATH>/<component>
    _summary: <One-line description>
    _description:
     <What the test traces>
     <What hardware/module is required>
    plugin: shell
-   category_id: kprovider/<domain>
+   category_id: <LEAF_CATEGORY>
    user: root
    estimated_duration: <120.0 for generic, 180.0 for driver-specific>
    command:
@@ -165,6 +235,12 @@ Create `~/canonical/workspace/checkbox-provider-kprovider/units/<domain>-jobs.px
     <module check if driver-specific, e.g.: grep -q '^i915 ' /proc/modules || { echo "i915 module not loaded — skipping"; exit 1; }>
     <bin_script_name>
    ```
+
+   Example job IDs following kernel hierarchy:
+   - `kprovider/gpu/drm/core` (from `drivers/gpu/drm/core/`)
+   - `kprovider/gpu/drm/i915` (from `drivers/gpu/drm/i915/`)
+   - `kprovider/sound/hda` (from `sound/hda/`)
+   - `kprovider/usb/core` (from `drivers/usb/core/`)
 
 3. **Do NOT use `requires:` field** — `executable` and `package` resource units
    are not available in kprovider. Put all prerequisite checks in `command:` instead.
@@ -183,17 +259,31 @@ Read the existing test plan file:
 cat ~/canonical/workspace/checkbox-provider-kprovider/units/test-plan.pxu
 ```
 
-Add the new jobs to the `kprovider-full` include list.
+Add the new jobs to the `kprovider-full` include list using their full
+hierarchical IDs (e.g. `kprovider/gpu/drm/i915`, not `kprovider/drm/i915`).
 
 Also add a new focused test plan for the domain if one doesn't already exist:
 ```
 unit: test plan
-id: kprovider-<domain>
-_name: kprovider <Domain> Subsystem
+id: <TEST_PLAN_ID>
+_name: kprovider <Human-Readable Domain Name>
 _description: <Domain> subsystem bpftrace workflow tests
 include:
- kprovider/<domain>/<subdriver1>
- kprovider/<domain>/<subdriver2>
+ kprovider/<KERNEL_PATH>/<component1>
+ kprovider/<KERNEL_PATH>/<component2>
+ ...
+```
+
+Example for `drm`:
+```
+unit: test plan
+id: kprovider-gpu-drm
+_name: kprovider DRM GPU Drivers
+_description: DRM subsystem bpftrace workflow tests (core + all GPU drivers)
+include:
+ kprovider/gpu/drm/core
+ kprovider/gpu/drm/i915
+ kprovider/gpu/drm/amd
  ...
 ```
 
@@ -293,7 +383,7 @@ Run the test plan (timeout 600s — 10 minutes max):
 ```bash
 timeout 600 ssh $SSH_REMOTE_OPTS ubuntu@<resolved_ip> "
   cd ~/checkbox-provider-kprovider
-  sudo checkbox-cli run kprovider-<domain> 2>&1 | tee /tmp/kprovider-<domain>-results.txt
+  sudo checkbox-cli run <TEST_PLAN_ID> 2>&1 | tee /tmp/<TEST_PLAN_ID>-results.txt
 "
 ```
 
@@ -302,8 +392,8 @@ and continue with remaining targets — do not hang waiting.
 
 Fetch the results back (timeout 60s):
 ```bash
-timeout 60 scp -o ConnectTimeout=15 -o StrictHostKeyChecking=no ubuntu@<resolved_ip>:/tmp/kprovider-<domain>-results.txt /tmp/kprovider-<domain>-<resolved_ip>-results.txt
-cat /tmp/kprovider-<domain>-<resolved_ip>-results.txt
+timeout 60 scp -o ConnectTimeout=15 -o StrictHostKeyChecking=no ubuntu@<resolved_ip>:/tmp/<TEST_PLAN_ID>-results.txt /tmp/<TEST_PLAN_ID>-<resolved_ip>-results.txt
+cat /tmp/<TEST_PLAN_ID>-<resolved_ip>-results.txt
 ```
 
 Parse the output for:
@@ -320,7 +410,7 @@ Collect results from all targets before proceeding to Phase 4.
 ### Step 14 — Analyse failures
 
 For each failed or erroring job:
-1. Read the corresponding `bin/<domain>_*_trace_test.py` script.
+1. Read the corresponding `bin/<KERNEL_PATH_UNDERSCORED>_*_trace_test.py` script.
 2. Identify the root cause from the test output:
    - **bpftrace probe not found** → wrong probe name; update the script's probe list.
    - **Timeout** → increase `PROBE_TIMEOUT` default or the `estimated_duration` in the pxu.
@@ -349,7 +439,7 @@ Once all jobs pass or skip cleanly on every target, commit and push:
 
 ```bash
 cd ~/canonical/workspace/checkbox-provider-kprovider
-git add bin/<domain>_*_trace_test.py units/<domain>-jobs.pxu units/test-plan.pxu
+git add bin/<KERNEL_PATH_UNDERSCORED>_*_trace_test.py units/<KERNEL_PATH_DASHED>-jobs.pxu units/test-plan.pxu
 ```
 
 Check what is staged before committing:
@@ -363,10 +453,10 @@ whether the files were newly created or already existed (tracked in Steps 4–5)
 
 - If **all bin scripts and pxu files were newly created** →
   ```bash
-  git commit -m "Create <domain> subsystem checkbox test jobs
+  git commit -m "Create <KERNEL_PATH> subsystem checkbox test jobs
 
   Import bpftrace workflow test scripts from kernel_readdoc and create
-  checkbox job definitions for the <domain> subsystem.
+  checkbox job definitions for the <KERNEL_PATH> subsystem.
 
   Jobs:
   $(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
@@ -374,10 +464,10 @@ whether the files were newly created or already existed (tracked in Steps 4–5)
   ```
 - If **any file already existed and was updated** →
   ```bash
-  git commit -m "Update <domain> subsystem checkbox test jobs
+  git commit -m "Update <KERNEL_PATH> subsystem checkbox test jobs
 
   Update bpftrace workflow test scripts and checkbox job definitions
-  for the <domain> subsystem.
+  for the <KERNEL_PATH> subsystem.
 
   Jobs:
   $(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
@@ -399,28 +489,28 @@ git push --set-upstream origin $(git branch --show-current)
 Print a summary including the git commit hash:
 
 ```
-## Results for domain: <domain>
+## Results for domain: <domain> (kernel path: <KERNEL_PATH>)
 
 ### bin/ scripts
 | Script | Source |
 |---|---|
-| <domain>_*_trace_test.py | kernel_readdoc/... |
+| <KERNEL_PATH_UNDERSCORED>_*_trace_test.py | kernel_readdoc/<KERNEL_SOURCE_PATH>/... |
 
 ### Test plans updated
 - kprovider-full (added N jobs)
-- kprovider-<domain> (new)
+- <TEST_PLAN_ID> (new)
 
 ### Test results per target
 #### <resolved_ip1>
 | Job ID | Result | Notes |
 |---|---|---|
-| kprovider/<domain>/... | PASS | |
-| kprovider/<domain>/... | SKIP | module not loaded |
+| kprovider/<KERNEL_PATH>/... | PASS | |
+| kprovider/<KERNEL_PATH>/... | SKIP | module not loaded |
 
 #### <resolved_ip2>
 | Job ID | Result | Notes |
 |---|---|---|
-| kprovider/<domain>/... | PASS | |
+| kprovider/<KERNEL_PATH>/... | PASS | |
 ...
 ```
 
@@ -443,7 +533,7 @@ Define SSH options for all remote commands in this mode:
 SSH_REMOTE_OPTS="-o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
 ```
 
-### Step D1 — Parse parameters
+### Step D1 — Parse parameters and resolve kernel hierarchy
 
 Parse the invocation arguments:
 - `domain` = second argument (kernel subsystem: drm, sound, usb, etc.)
@@ -455,10 +545,15 @@ Validate:
 - `ip` must look like an IPv4 address (digits and dots)
 - `description` may be empty (user just wants to run and debug)
 
+**Resolve the kernel hierarchy** using the same rules as Step 0 (Mode A) to
+compute `KERNEL_PATH`, `KERNEL_PATH_DASHED`, `KERNEL_PATH_UNDERSCORED`,
+`PXU_FILE`, `TEST_PLAN_ID`, and `LEAF_CATEGORY`.
+
 Print the parsed parameters:
 ```
 Debug mode:
   Domain:      <domain>
+  Kernel path: <KERNEL_PATH>
   Target IP:   <ip>
   Description: <description>
 ```
@@ -500,17 +595,17 @@ If `bpftrace` or `checkbox-cli` is missing, report and stop.
 
 Check that the local provider has the domain:
 ```bash
-ls ~/canonical/workspace/checkbox-provider-kprovider/units/<domain>-jobs.pxu 2>/dev/null
-grep "id: kprovider-<domain>" ~/canonical/workspace/checkbox-provider-kprovider/units/test-plan.pxu
+ls ~/canonical/workspace/checkbox-provider-kprovider/units/<KERNEL_PATH_DASHED>-jobs.pxu 2>/dev/null
+grep "id: <TEST_PLAN_ID>" ~/canonical/workspace/checkbox-provider-kprovider/units/test-plan.pxu
 ```
 
 If either is missing:
-- Report: "Domain `<domain>` does not have provider jobs yet. Run `/cbprovider-domain create <domain>` first."
+- Report: "Domain `<domain>` (kernel path: `<KERNEL_PATH>`) does not have provider jobs yet. Run `/cbprovider-domain create <domain>` first."
 - Stop.
 
 Also check that the provider is installed on the target:
 ```bash
-timeout 30 ssh $SSH_REMOTE_OPTS ubuntu@<ip> "checkbox-cli list-bootstrapped com.canonical.certification::kprovider-<domain> 2>&1"
+timeout 30 ssh $SSH_REMOTE_OPTS ubuntu@<ip> "checkbox-cli list-bootstrapped com.canonical.certification::<TEST_PLAN_ID> 2>&1"
 ```
 
 If the test plan is not listed on the target, deploy first (jump to Step D5 deploy substep, then return here).
@@ -535,8 +630,8 @@ timeout 120 ssh $SSH_REMOTE_OPTS ubuntu@<ip> "
 Run the test plan (timeout 600s — 10 minutes max):
 ```bash
 timeout 600 ssh $SSH_REMOTE_OPTS ubuntu@<ip> "
-  sudo checkbox-cli run com.canonical.certification::kprovider-<domain> 2>&1
-" | tee /tmp/kprovider-debug-<domain>-<ip>.txt
+  sudo checkbox-cli run com.canonical.certification::<TEST_PLAN_ID> 2>&1
+" | tee /tmp/kprovider-debug-<KERNEL_PATH_DASHED>-<ip>.txt
 ```
 
 If `timeout` kills the command (exit code 124), report the timeout and stop.
@@ -554,8 +649,8 @@ Cross-reference with the user's `<description>`:
 - Are there additional issues not mentioned in the description?
 
 Read the relevant local files to understand the test logic:
-1. `~/canonical/workspace/checkbox-provider-kprovider/units/<domain>-jobs.pxu` — job definitions, guards, command wrappers
-2. `~/canonical/workspace/checkbox-provider-kprovider/bin/<domain>_*_trace_test.py` — the actual test scripts
+1. `~/canonical/workspace/checkbox-provider-kprovider/units/<KERNEL_PATH_DASHED>-jobs.pxu` — job definitions, guards, command wrappers
+2. `~/canonical/workspace/checkbox-provider-kprovider/bin/<KERNEL_PATH_UNDERSCORED>_*_trace_test.py` — the actual test scripts
 
 For each failing or suspicious job, identify:
 - **Script-level issue**: exit code not matching results, missing hardware detection, wrong probe names
@@ -606,7 +701,7 @@ git diff --cached --stat
 
 Commit with a descriptive message explaining what was debugged and fixed:
 ```bash
-git commit -m "fix(<domain>): <concise description of what was fixed>
+git commit -m "fix(<KERNEL_PATH_DASHED>): <concise description of what was fixed>
 
 <Longer explanation of root cause and fix>
 
@@ -630,7 +725,7 @@ git push --set-upstream origin $(git branch --show-current)
 Print a summary:
 
 ```
-## Debug Results for domain: <domain>
+## Debug Results for domain: <domain> (kernel path: <KERNEL_PATH>)
 
 ### Target: <ip>
 ### Problem reported: <description>
@@ -642,18 +737,18 @@ Print a summary:
 | File | Change |
 |---|---|
 | bin/<script>.py | <what was changed> |
-| units/<domain>-jobs.pxu | <what was changed, if any> |
+| units/<KERNEL_PATH_DASHED>-jobs.pxu | <what was changed, if any> |
 
 ### Final test results
 | Job ID | Result | Notes |
 |---|---|---|
-| kprovider/<domain>/... | PASS | |
-| kprovider/<domain>/... | SKIP | <reason> |
+| kprovider/<KERNEL_PATH>/... | PASS | |
+| kprovider/<KERNEL_PATH>/... | SKIP | <reason> |
 
 ### Unresolved issues (if any)
 | Job ID | Issue | Reason |
 |---|---|---|
-| kprovider/<domain>/... | <issue> | environment / hardware limitation |
+| kprovider/<KERNEL_PATH>/... | <issue> | environment / hardware limitation |
 
 ### Commit
 <commit hash>
