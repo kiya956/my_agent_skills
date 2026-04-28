@@ -51,7 +51,27 @@ into `~/canonical/workspace/checkbox-provider-kprovider`.
 
 Follow every step in order. Do not skip steps. Stop and report clearly if any step fails.
 
-### Step 0 — Resolve kernel hierarchy path
+### Step 0 — Sync repositories
+
+Ensure both the provider and kernel_readdoc repos are on `main` and up-to-date
+before making any changes:
+
+```bash
+cd ~/canonical/workspace/checkbox-provider-kprovider
+git checkout main
+git pull --ff-only origin main
+```
+
+```bash
+cd ~/canonical/workspace/kernel_readdoc
+git checkout main
+git pull --ff-only origin main
+```
+
+If either `git pull` fails (e.g. merge conflict, diverged history), stop and
+report the error — do not proceed with stale code.
+
+### Step 1 — Resolve kernel hierarchy path
 
 The `kernel_readdoc` repository mirrors the Linux kernel source tree structure.
 Before doing anything else, resolve the user's `<domain>` to its **kernel source path**.
@@ -433,12 +453,24 @@ PASS or SKIP with a clear hardware-absent reason. Do **not** commit during
 this loop. If a target consistently times out after 2 retries, skip it and
 note the timeout in the final report.
 
-### Step 16b — Commit and push
+### Step 16b — Create branch, commit, push, and open PR
 
-Once all jobs pass or skip cleanly on every target, commit and push:
+**Do NOT push directly to `main`.** Always work on a feature branch and open a
+pull request.
+
+Once all jobs pass or skip cleanly on every target:
 
 ```bash
 cd ~/canonical/workspace/checkbox-provider-kprovider
+```
+
+Create a feature branch from the current `main`:
+```bash
+git checkout -b <KERNEL_PATH_DASHED>-checkbox-jobs
+```
+
+Stage the changes:
+```bash
 git add bin/<KERNEL_PATH_UNDERSCORED>_*_trace_test.py units/<KERNEL_PATH_DASHED>-jobs.pxu units/test-plan.pxu
 ```
 
@@ -460,7 +492,8 @@ whether the files were newly created or already existed (tracked in Steps 4–5)
 
   Jobs:
   $(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
-  "
+
+  Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
   ```
 - If **any file already existed and was updated** →
   ```bash
@@ -471,17 +504,38 @@ whether the files were newly created or already existed (tracked in Steps 4–5)
 
   Jobs:
   $(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
-  "
+
+  Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
   ```
 
-Then push:
+Push the feature branch:
 ```bash
-git push
+git push --set-upstream origin <KERNEL_PATH_DASHED>-checkbox-jobs
 ```
 
-If `git push` fails because there is no upstream branch yet, run:
+Open a pull request using the `gh` CLI:
 ```bash
-git push --set-upstream origin $(git branch --show-current)
+gh pr create \
+  --base main \
+  --head <KERNEL_PATH_DASHED>-checkbox-jobs \
+  --title "<Create|Update> <KERNEL_PATH> subsystem checkbox test jobs" \
+  --body "## Summary
+
+<Create or Update> bpftrace workflow test scripts and checkbox job definitions
+for the \`<KERNEL_PATH>\` subsystem.
+
+## Jobs
+$(git diff main --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /- /')
+
+## Test results per target
+<Include the per-target results table from Step 17>
+"
+```
+
+If `gh` is not installed or not authenticated, print the GitHub compare URL for
+the user to create the PR manually:
+```
+https://github.com/<owner>/<repo>/compare/main...<KERNEL_PATH_DASHED>-checkbox-jobs?expand=1
 ```
 
 ### Step 17 — Final report
@@ -533,6 +587,18 @@ Define SSH options for all remote commands in this mode:
 SSH_REMOTE_OPTS="-o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
 ```
 
+### Step D0 — Sync repository
+
+Ensure the provider repo is on `main` and up-to-date before debugging:
+
+```bash
+cd ~/canonical/workspace/checkbox-provider-kprovider
+git checkout main
+git pull --ff-only origin main
+```
+
+If `git pull` fails, stop and report the error.
+
 ### Step D1 — Parse parameters and resolve kernel hierarchy
 
 Parse the invocation arguments:
@@ -545,7 +611,7 @@ Validate:
 - `ip` must look like an IPv4 address (digits and dots)
 - `description` may be empty (user just wants to run and debug)
 
-**Resolve the kernel hierarchy** using the same rules as Step 0 (Mode A) to
+**Resolve the kernel hierarchy** using the same rules as Step 1 (Mode A) to
 compute `KERNEL_PATH`, `KERNEL_PATH_DASHED`, `KERNEL_PATH_UNDERSCORED`,
 `PXU_FILE`, `TEST_PLAN_ID`, and `LEAF_CATEGORY`.
 
@@ -688,12 +754,27 @@ If there are still failures after re-test:
 - Distinguish between code bugs (fixable) vs environment/hardware limitations (not fixable)
 - Do NOT continue looping
 
-### Step D9 — Commit
+### Step D9 — Create branch, commit, push, and open PR
+
+**Do NOT push directly to `main`.** Always work on a feature branch and open a
+pull request.
 
 Once all jobs pass or skip with clear hardware-absent reasons:
 
 ```bash
 cd ~/canonical/workspace/checkbox-provider-kprovider
+```
+
+Create a feature branch from the current `main`:
+```bash
+git checkout -b fix/<KERNEL_PATH_DASHED>-<short-description>
+```
+
+Where `<short-description>` is a brief kebab-case summary of the fix (e.g.
+`fix/gpu-drm-exit-codes`, `fix/sound-passive-steps`).
+
+Stage and review changes:
+```bash
 git add -A
 git status
 git diff --cached --stat
@@ -710,14 +791,35 @@ Tested on: <ip>
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 ```
 
-Then push:
+Push the feature branch:
 ```bash
-git push
+git push --set-upstream origin fix/<KERNEL_PATH_DASHED>-<short-description>
 ```
 
-If `git push` fails because there is no upstream branch yet:
+Open a pull request using the `gh` CLI:
 ```bash
-git push --set-upstream origin $(git branch --show-current)
+gh pr create \
+  --base main \
+  --head fix/<KERNEL_PATH_DASHED>-<short-description> \
+  --title "fix(<KERNEL_PATH_DASHED>): <concise description of what was fixed>" \
+  --body "## Summary
+
+<Longer explanation of root cause and fix>
+
+## Fixes applied
+<Table of files changed and what was changed>
+
+## Test results
+<Per-target results table from Step D10>
+
+Tested on: <ip>
+"
+```
+
+If `gh` is not installed or not authenticated, print the GitHub compare URL for
+the user to create the PR manually:
+```
+https://github.com/<owner>/<repo>/compare/main...fix/<KERNEL_PATH_DASHED>-<short-description>?expand=1
 ```
 
 ### Step D10 — Final report
