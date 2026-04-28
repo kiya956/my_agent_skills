@@ -41,11 +41,19 @@ Check `~/canonical/workspace/kernel_readdoc` and compare against the current
 kernel source tree to find subsystem topics under `<domain>` that have not yet
 been documented.
 
+The directory hierarchy in `kernel_readdoc` **must mirror the kernel source tree**.
+First, find where `<domain>` lives in the source tree to determine the correct
+`<source_path>` (e.g. `drivers/gpu/drm` for drm, `sound` for sound).
+
 ```bash
-ls ~/canonical/workspace/kernel_readdoc/<domain>/ 2>/dev/null
+# Find the source-tree path for the domain
+find ~/canonical/workspace/kernel_readdoc/ -maxdepth 4 -type d -name "<domain>" 2>/dev/null
+ls ~/canonical/workspace/kernel_readdoc/<source_path>/ 2>/dev/null
 ```
 
 List what exists and what is missing. Only work on topics within `<domain>`.
+Use `<source_path>` (the full path matching the kernel source tree) for all
+subsequent steps — do NOT flatten it to `<domain>/` at the root.
 
 ### Step 2 — Pick the next undocumented topic
 
@@ -86,15 +94,26 @@ The test must:
 - Mark each step as PASS or FAIL
 - Print a summary at the end
 
+Before writing any file, check whether it already exists:
+
+```bash
+ls ~/canonical/workspace/kernel_readdoc/<source_path>/<topic>/README.md 2>/dev/null
+ls ~/canonical/workspace/kernel_readdoc/<source_path>/<topic>/test_*.py 2>/dev/null
+```
+
+- **If the file does not exist** → create it.
+- **If the file already exists** → update it in place (merge new content with
+  existing content, preserving any manual edits where possible).
+
 Export both `README.md` and the test script to
-`~/canonical/workspace/kernel_readdoc/<domain>/<topic>/`
+`~/canonical/workspace/kernel_readdoc/<source_path>/<topic>/`
 (create the directory if it does not exist).
 
 Commit and push without prompting:
 ```bash
 cd ~/canonical/workspace/kernel_readdoc
-git add <domain>/<topic>/
-git commit -m "Add <domain>/<topic> analysis and bpftrace test"
+git add <source_path>/<topic>/
+git commit -m "Add <source_path>/<topic> analysis and bpftrace test"
 git push
 ```
 
