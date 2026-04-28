@@ -101,19 +101,34 @@ ls ~/canonical/workspace/kernel_readdoc/<source_path>/<topic>/README.md 2>/dev/n
 ls ~/canonical/workspace/kernel_readdoc/<source_path>/<topic>/test_*.py 2>/dev/null
 ```
 
-- **If the file does not exist** → create it.
+- **If the file does not exist** → create it. Record the action as **"Create"**.
 - **If the file already exists** → update it in place (merge new content with
-  existing content, preserving any manual edits where possible).
+  existing content, preserving any manual edits where possible). Record the
+  action as **"Update"**.
+
+Track the action (Create or Update) for each file — this determines the commit
+message in the next substep.
 
 Export both `README.md` and the test script to
 `~/canonical/workspace/kernel_readdoc/<source_path>/<topic>/`
 (create the directory if it does not exist).
 
-Commit and push without prompting:
+Commit and push without prompting. Use the correct verb based on whether files
+were created or updated:
+
+- If **all files were newly created** →
+  ```bash
+  git commit -m "Create <source_path>/<topic> analysis and bpftrace test"
+  ```
+- If **any file already existed and was updated** →
+  ```bash
+  git commit -m "Update <source_path>/<topic> analysis and bpftrace test"
+  ```
+
 ```bash
 cd ~/canonical/workspace/kernel_readdoc
 git add <source_path>/<topic>/
-git commit -m "Add <source_path>/<topic> analysis and bpftrace test"
+git commit -m "<Create|Update> <source_path>/<topic> analysis and bpftrace test"
 git push
 ```
 
@@ -134,7 +149,7 @@ Print a summary of what was documented:
 
 | Topic | README | Test Script | Status |
 |---|---|---|---|
-| <topic1> | ✓ | ✓ | committed |
-| <topic2> | ✓ | ✓ | committed |
+| <topic1> | ✓ | ✓ | created & committed |
+| <topic2> | ✓ | ✓ | updated & committed |
 | <topic3> | — | — | already documented |
 ```

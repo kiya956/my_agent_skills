@@ -77,8 +77,8 @@ After all phases complete, print a combined summary:
 ### Phase 1 — Analysis
 | Topic | README | Test Script | Status |
 |---|---|---|---|
-| <topic1> | ✓ | ✓ | committed |
-| <topic2> | ✓ | ✓ | committed |
+| <topic1> | ✓ | ✓ | created & committed |
+| <topic2> | ✓ | ✓ | updated & committed |
 
 ### Phase 2 — Checkbox test cases
 | Job ID | Result | Notes |

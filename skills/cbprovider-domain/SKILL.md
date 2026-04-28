@@ -106,12 +106,22 @@ python3 -m py_compile <script>
 
 ### Step 4 — Copy scripts to bin/
 
+Before copying, check whether each bin script already exists:
+
+```bash
+ls ~/canonical/workspace/checkbox-provider-kprovider/bin/<bin_script_name> 2>/dev/null
+```
+
+- **If it does not exist** → this is a new script. Record the action as **"Create"**.
+- **If it already exists** → this is an update. Record the action as **"Update"**.
+
 ```bash
 cp <source_script> ~/canonical/workspace/checkbox-provider-kprovider/bin/<bin_script_name>
 chmod +x ~/canonical/workspace/checkbox-provider-kprovider/bin/<bin_script_name>
 ```
 
-Repeat for every script found.
+Repeat for every script found. Track the Create/Update action for each — this
+determines the commit message later (Step 16b).
 
 ### Step 5 — Check for an existing pxu file for this domain
 
@@ -119,10 +129,14 @@ Repeat for every script found.
 ls ~/canonical/workspace/checkbox-provider-kprovider/units/<domain>-jobs.pxu 2>/dev/null
 ```
 
-If it already exists, read it to understand what jobs are already defined so
-you don't create duplicates.
+If it already exists:
+- Read it to understand what jobs are already defined so you don't create duplicates.
+- Record the action as **"Update"** for the pxu file.
 
-### Step 6 — Create units/<domain>-jobs.pxu
+If it does not exist:
+- Record the action as **"Create"** for the pxu file.
+
+### Step 6 — Create or update units/<domain>-jobs.pxu
 
 Create `~/canonical/workspace/checkbox-provider-kprovider/units/<domain>-jobs.pxu`.
 
@@ -344,17 +358,31 @@ git status
 git diff --cached --stat
 ```
 
-Commit with a descriptive message:
-```bash
-git commit -m "Add <domain> subsystem checkbox test jobs
+Commit with a descriptive message. Use **"Create"** or **"Update"** based on
+whether the files were newly created or already existed (tracked in Steps 4–5):
 
-Import bpftrace workflow test scripts from kernel_readdoc and create
-checkbox job definitions for the <domain> subsystem.
+- If **all bin scripts and pxu files were newly created** →
+  ```bash
+  git commit -m "Create <domain> subsystem checkbox test jobs
 
-Jobs added:
-$(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
-"
-```
+  Import bpftrace workflow test scripts from kernel_readdoc and create
+  checkbox job definitions for the <domain> subsystem.
+
+  Jobs:
+  $(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
+  "
+  ```
+- If **any file already existed and was updated** →
+  ```bash
+  git commit -m "Update <domain> subsystem checkbox test jobs
+
+  Update bpftrace workflow test scripts and checkbox job definitions
+  for the <domain> subsystem.
+
+  Jobs:
+  $(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
+  "
+  ```
 
 Then push:
 ```bash
