@@ -135,6 +135,7 @@ install_copilot_cli() {
 
         if [ -d "$target" ]; then
             print_warn "$skill_name already exists at $target — overwriting"
+            rm -rf "$target"
         fi
 
         cp -r "$skill_dir" "$target"
@@ -159,6 +160,7 @@ install_claude() {
 
         if [ -d "$target" ]; then
             print_warn "$skill_name already exists at $target — overwriting"
+            rm -rf "$target"
         fi
 
         cp -r "$skill_dir" "$target"
