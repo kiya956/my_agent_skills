@@ -1,6 +1,6 @@
 ---
 name: cbprovider-domain
-description: Create checkbox test cases from kernel_readdoc for a specific kernel subsystem domain (e.g. drm, sound, usb, acpi). Pass the domain name as the argument.
+description: Create checkbox test cases from kernel_readdoc for a specific kernel subsystem domain (e.g. drm, sound, usb, acpi). Pass the domain name as the argument. Supports create, debug, and migrate functions.
 ---
 
 # cbprovider-domain
@@ -15,6 +15,7 @@ into `~/canonical/workspace/checkbox-provider-kprovider`.
 /cbprovider-domain <domain>                              # Mode A: create/update (default)
 /cbprovider-domain create <domain>                       # Mode A: explicit create/update
 /cbprovider-domain debug <domain> <ip> <description...>  # Mode B: debug on target device
+/cbprovider-domain migrate <domain>                      # Mode C: migrate domain to Forgejo
 ```
 
 **Examples:**
@@ -22,13 +23,14 @@ into `~/canonical/workspace/checkbox-provider-kprovider`.
 /cbprovider-domain drm
 /cbprovider-domain create sound
 /cbprovider-domain debug drm 10.102.180.54 bridge test shows all FAIL but result passes
+/cbprovider-domain migrate drm
 ```
 
 ## Parameters
 
 | Parameter | Description |
 |---|---|
-| `function` | (Optional) `create` or `debug`. Defaults to `create` if omitted. |
+| `function` | (Optional) `create`, `debug`, or `migrate`. Defaults to `create` if omitted. |
 | `domain` | Kernel subsystem name (e.g. `drm`, `sound`, `usb`, `acpi`) |
 | `ip` | (debug only) Target device IP address |
 | `description` | (debug only) Free-text description of the issue — everything after the IP is joined as the description, no quotes required |
@@ -41,7 +43,8 @@ into `~/canonical/workspace/checkbox-provider-kprovider`.
 
 - If the first argument is `debug` → run **Mode B — Debug** (Steps D1–D10 below)
 - If the first argument is `create` → run **Mode A — Create/Update** (Steps 1–17 below)
-- If the first argument is neither `debug` nor `create` → treat it as `<domain>` and run **Mode A — Create/Update**
+- If the first argument is `migrate` → run **Mode C — Migrate** (Steps M1–M8 below)
+- If the first argument is neither `debug`, `create`, nor `migrate` → treat it as `<domain>` and run **Mode A — Create/Update**
 
 **Only run one mode per invocation. Do not mix modes.**
 
@@ -854,4 +857,219 @@ Print a summary:
 
 ### Commit
 <commit hash>
+```
+
+---
+
+# Mode C — Migrate
+
+Migrate a domain's test scripts, job definitions, and test plan entries from
+`~/canonical/workspace/checkbox-provider-kprovider` to the Forgejo repository at
+`ssh://git@forgejo.kernel.ubuntu.com/kiya956/checkbox-kernel-tests.git`.
+
+Follow every step in order. Do not skip steps. Stop and report clearly if any step fails.
+
+**Only run one mode per invocation. Do not mix modes.**
+
+### Step M1 — Parse parameters and resolve kernel hierarchy
+
+Parse the invocation arguments:
+- `domain` = second argument (kernel subsystem: drm, sound, usb, etc.)
+
+Validate:
+- `domain` must be non-empty
+
+**Resolve the kernel hierarchy** using the same rules as Step 1 (Mode A) to
+compute `KERNEL_PATH`, `KERNEL_PATH_DASHED`, `KERNEL_PATH_UNDERSCORED`,
+`PXU_FILE`, `TEST_PLAN_ID`, and `LEAF_CATEGORY`.
+
+Print the parsed parameters:
+```
+Migrate mode:
+  Domain:      <domain>
+  Kernel path: <KERNEL_PATH>
+  Target repo: ssh://git@forgejo.kernel.ubuntu.com/kiya956/checkbox-kernel-tests.git
+```
+
+### Step M2 — Verify the domain exists in the local provider
+
+Check that the domain's files exist locally:
+
+```bash
+ls ~/canonical/workspace/checkbox-provider-kprovider/units/<KERNEL_PATH_DASHED>-jobs.pxu 2>/dev/null
+ls ~/canonical/workspace/checkbox-provider-kprovider/bin/<KERNEL_PATH_UNDERSCORED>_*_trace_test.py 2>/dev/null
+```
+
+If the pxu file does not exist, stop and report:
+> "Domain `<domain>` (kernel path: `<KERNEL_PATH>`) does not have provider jobs yet. Run `/cbprovider-domain create <domain>` first."
+
+Collect the list of bin scripts that match the domain pattern — these will be
+migrated.
+
+Also check for the domain's test plan entry in `units/test-plan.pxu`:
+```bash
+grep -A 50 "id: <TEST_PLAN_ID>" ~/canonical/workspace/checkbox-provider-kprovider/units/test-plan.pxu
+```
+
+### Step M3 — Clone or update the Forgejo repository
+
+Define the Forgejo remote:
+```
+FORGEJO_REPO=ssh://git@forgejo.kernel.ubuntu.com/kiya956/checkbox-kernel-tests.git
+FORGEJO_LOCAL=~/canonical/workspace/checkbox-kernel-tests
+```
+
+If the local clone already exists, update it:
+```bash
+cd "$FORGEJO_LOCAL"
+git checkout main
+git pull --ff-only origin main
+```
+
+If it does not exist, clone it:
+```bash
+git clone "$FORGEJO_REPO" "$FORGEJO_LOCAL"
+cd "$FORGEJO_LOCAL"
+```
+
+If cloning or pulling fails (e.g. SSH key not configured, permission denied),
+stop and report the error — do not proceed.
+
+### Step M4 — Copy provider scaffolding (if needed)
+
+Check if the Forgejo repo already has the provider scaffolding files. If any of
+the following are missing, copy them from the local provider:
+
+```bash
+for f in manage.py pyproject.toml; do
+  if [ ! -f "$FORGEJO_LOCAL/$f" ]; then
+    cp ~/canonical/workspace/checkbox-provider-kprovider/$f "$FORGEJO_LOCAL/$f"
+  fi
+done
+```
+
+Also ensure the `bin/` and `units/` directories exist:
+```bash
+mkdir -p "$FORGEJO_LOCAL/bin" "$FORGEJO_LOCAL/units"
+```
+
+### Step M5 — Copy domain files
+
+Copy the domain's bin scripts:
+```bash
+cp ~/canonical/workspace/checkbox-provider-kprovider/bin/<KERNEL_PATH_UNDERSCORED>_*_trace_test.py \
+   "$FORGEJO_LOCAL/bin/"
+chmod +x "$FORGEJO_LOCAL/bin/"<KERNEL_PATH_UNDERSCORED>_*_trace_test.py
+```
+
+Copy the domain's pxu file:
+```bash
+cp ~/canonical/workspace/checkbox-provider-kprovider/units/<KERNEL_PATH_DASHED>-jobs.pxu \
+   "$FORGEJO_LOCAL/units/"
+```
+
+### Step M6 — Update test plan in the Forgejo repo
+
+Check if a `test-plan.pxu` exists in the Forgejo repo:
+```bash
+ls "$FORGEJO_LOCAL/units/test-plan.pxu" 2>/dev/null
+```
+
+**If it does not exist:** Copy the entire `test-plan.pxu` from the local provider
+as a starting point, then trim it to only include the domain's test plan and
+`kprovider-full` entries that reference this domain's jobs:
+```bash
+cp ~/canonical/workspace/checkbox-provider-kprovider/units/test-plan.pxu "$FORGEJO_LOCAL/units/test-plan.pxu"
+```
+
+**If it already exists:** Read it and merge the domain's test plan entries:
+1. Check if `<TEST_PLAN_ID>` already exists in the Forgejo test plan.
+2. If not, append the domain-specific test plan block from the local provider.
+3. Check if the domain's jobs are listed under `kprovider-full`. If not, add them.
+
+After updating, verify no duplicate test plan IDs were introduced:
+```bash
+grep '^id:' "$FORGEJO_LOCAL/units/test-plan.pxu" | sort | uniq -d
+```
+
+### Step M7 — Validate and commit
+
+Validate the provider in the Forgejo repo:
+```bash
+cd "$FORGEJO_LOCAL" && python3 manage.py validate 2>&1
+```
+
+The output must end with `The provider seems to be valid`.
+If there are errors, fix them before proceeding. Warnings about missing
+other providers can be ignored.
+
+Create a feature branch, commit, and push:
+```bash
+cd "$FORGEJO_LOCAL"
+git checkout -b migrate/<KERNEL_PATH_DASHED>
+git add bin/<KERNEL_PATH_UNDERSCORED>_*_trace_test.py \
+        units/<KERNEL_PATH_DASHED>-jobs.pxu \
+        units/test-plan.pxu \
+        manage.py pyproject.toml
+git status
+git diff --cached --stat
+```
+
+Commit with a descriptive message:
+```bash
+git commit -m "Migrate <KERNEL_PATH> subsystem checkbox test jobs from KTProvider
+
+Copy bpftrace workflow test scripts and checkbox job definitions for the
+<KERNEL_PATH> subsystem from checkbox-provider-kprovider (KTProvider).
+
+Source: https://github.com/kiya956/KTProvider
+
+Jobs:
+$(git diff --cached --name-only | grep pxu | xargs grep '^id: kprovider' 2>/dev/null | sed 's/.*id: /  - /')
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+```
+
+Push the feature branch:
+```bash
+git push --set-upstream origin migrate/<KERNEL_PATH_DASHED>
+```
+
+If the push fails, stop and report the error.
+
+### Step M8 — Final report
+
+Print a summary:
+
+```
+## Migration Results for domain: <domain> (kernel path: <KERNEL_PATH>)
+
+### Source
+- Repository: ~/canonical/workspace/checkbox-provider-kprovider (KTProvider)
+
+### Destination
+- Repository: ssh://git@forgejo.kernel.ubuntu.com/kiya956/checkbox-kernel-tests.git
+- Branch: migrate/<KERNEL_PATH_DASHED>
+
+### Files migrated
+| File | Type |
+|---|---|
+| bin/<script1>.py | Test script |
+| bin/<script2>.py | Test script |
+| units/<KERNEL_PATH_DASHED>-jobs.pxu | Job definitions |
+| units/test-plan.pxu | Test plan (updated) |
+| manage.py | Provider scaffolding (if new) |
+| pyproject.toml | Provider scaffolding (if new) |
+
+### Test plan entries
+- <TEST_PLAN_ID> (domain-specific plan)
+- kprovider-full (updated with domain jobs)
+
+### Commit
+<commit hash> on branch migrate/<KERNEL_PATH_DASHED>
+
+### Next steps
+- Review the branch on Forgejo and merge to main when ready
+- To push directly to main instead, run:
+  cd ~/canonical/workspace/checkbox-kernel-tests && git checkout main && git merge migrate/<KERNEL_PATH_DASHED> && git push origin main
 ```
