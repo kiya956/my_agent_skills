@@ -58,6 +58,40 @@ KERNEL_SRC=~/canonical/kernel/noble-linux-oem
 Follow every step in order. Do not skip steps. Stop and report clearly if any step fails.
 **Process ONLY the specified `<domain>` — do NOT loop or continue to other domains.**
 
+### Step 0 — Verify prerequisites
+
+#### 0.1 — Check kernel source tree
+
+Check whether the kernel source tree exists at `~/canonical/kernel/noble-linux-oem`.
+If the directory is missing or empty, clone it from the mainline kernel repository:
+
+```bash
+KERNEL_SRC=~/canonical/kernel/noble-linux-oem
+if [ ! -d "$KERNEL_SRC/.git" ]; then
+    echo "Kernel source tree not found. Cloning from mainline..."
+    mkdir -p ~/canonical/kernel
+    git clone https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git "$KERNEL_SRC"
+else
+    echo "Kernel source tree found at $KERNEL_SRC"
+fi
+```
+
+#### 0.2 — Check kernel_readdoc repository
+
+Check whether `~/canonical/workspace/kernel_readdoc` exists. If the directory
+is missing or empty, clone it from the project repository:
+
+```bash
+READDOC=~/canonical/workspace/kernel_readdoc
+if [ ! -d "$READDOC/.git" ]; then
+    echo "kernel_readdoc not found. Cloning..."
+    mkdir -p ~/canonical/workspace
+    git clone git@github.com:kiya956/kernel_readdoc.git "$READDOC"
+else
+    echo "kernel_readdoc found at $READDOC"
+fi
+```
+
 ### Step 1 — Locate the domain in the kernel source tree
 
 Find where `<domain>` lives in the actual kernel source:

@@ -54,10 +54,45 @@ into `~/canonical/workspace/checkbox-provider-kprovider`.
 
 Follow every step in order. Do not skip steps. Stop and report clearly if any step fails.
 
-### Step 0 — Sync repositories
+### Step 0 — Verify prerequisites and sync repositories
 
-Ensure both the provider and kernel_readdoc repos are on `main` and up-to-date
-before making any changes:
+#### 0.1 — Check kernel_readdoc repository
+
+Check whether `~/canonical/workspace/kernel_readdoc` exists. If the directory
+is missing or empty, clone it from the project repository; otherwise pull to
+get the latest changes:
+
+```bash
+READDOC=~/canonical/workspace/kernel_readdoc
+if [ ! -d "$READDOC/.git" ]; then
+    echo "kernel_readdoc not found. Cloning..."
+    mkdir -p ~/canonical/workspace
+    git clone git@github.com:kiya956/kernel_readdoc.git "$READDOC"
+else
+    echo "kernel_readdoc found at $READDOC — pulling latest..."
+    cd "$READDOC" && git checkout main && git pull --ff-only origin main
+fi
+```
+
+#### 0.2 — Check KTProvider repository
+
+Check whether `~/canonical/workspace/KTProvider` exists. If the directory
+is missing or empty, clone it from the project repository:
+
+```bash
+KTPROVIDER=~/canonical/workspace/KTProvider
+if [ ! -d "$KTPROVIDER/.git" ]; then
+    echo "KTProvider not found. Cloning..."
+    mkdir -p ~/canonical/workspace
+    git clone git@github.com:kiya956/KTProvider.git "$KTPROVIDER"
+else
+    echo "KTProvider found at $KTPROVIDER"
+fi
+```
+
+#### 0.3 — Sync checkbox-provider-kprovider
+
+Ensure the provider repo is on `main` and up-to-date before making any changes:
 
 ```bash
 cd ~/canonical/workspace/checkbox-provider-kprovider
@@ -65,13 +100,7 @@ git checkout main
 git pull --ff-only origin main
 ```
 
-```bash
-cd ~/canonical/workspace/kernel_readdoc
-git checkout main
-git pull --ff-only origin main
-```
-
-If either `git pull` fails (e.g. merge conflict, diverged history), stop and
+If any `git pull` fails (e.g. merge conflict, diverged history), stop and
 report the error — do not proceed with stale code.
 
 ### Step 1 — Resolve kernel hierarchy path
