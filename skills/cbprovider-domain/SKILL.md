@@ -334,6 +334,28 @@ Do **not** commit or push yet. Proceed directly to Phase 2.
 
 ## Phase 2 — Inject SSH key to target machine
 
+### Step 9b — Verify TW VPN connection
+
+The target machines are behind the TW VPN. Before connecting to any target,
+verify the VPN is active:
+```bash
+nmcli connection show --active 2>/dev/null | grep -qiE '^tw-.*vpn' && echo "TW VPN is active" || echo "TW VPN is NOT active"
+```
+
+If the TW VPN is **not** active, attempt to bring it up:
+```bash
+nmcli connection up "$(nmcli connection show | grep -iE '^tw-.*vpn' | awk '{print $1}')" 2>&1
+```
+
+Wait a few seconds, then re-check:
+```bash
+sleep 5
+nmcli connection show --active 2>/dev/null | grep -iE '^tw-.*vpn'
+```
+
+If the VPN still cannot be activated, stop and tell the user:
+> "TW VPN is not connected and could not be started automatically. Please connect to the TW VPN manually and re-run."
+
 ### Step 10 — Read target list from config
 
 Read the config file:
@@ -627,22 +649,46 @@ Debug mode:
   Description: <description>
 ```
 
-### Step D2 — SSH connectivity and prerequisites
+### Step D1b — Verify TW VPN connection
 
-Test SSH connectivity with a timeout:
+The target machines are behind the TW VPN. Before connecting to the target,
+verify the VPN is active:
+```bash
+nmcli connection show --active 2>/dev/null | grep -qiE '^tw-.*vpn' && echo "TW VPN is active" || echo "TW VPN is NOT active"
+```
+
+If the TW VPN is **not** active, attempt to bring it up:
+```bash
+nmcli connection up "$(nmcli connection show | grep -iE '^tw-.*vpn' | awk '{print $1}')" 2>&1
+```
+
+Wait a few seconds, then re-check:
+```bash
+sleep 5
+nmcli connection show --active 2>/dev/null | grep -iE '^tw-.*vpn'
+```
+
+If the VPN still cannot be activated, stop and tell the user:
+> "TW VPN is not connected and could not be started automatically. Please connect to the TW VPN manually and re-run."
+
+### Step D2 — Inject credentials and check prerequisites
+
+Always inject SSH credentials first using `inject.sh`, regardless of whether
+SSH access already works:
+```bash
+timeout 120 bash ~/.copilot/skills/cbprovider-domain/scripts/inject.sh <ip>
+```
+
+- If inject.sh fails because the target is unreachable (powered off, network
+  issue), stop and report the target is offline.
+- If inject.sh reports the key already exists, that's fine — proceed.
+
+After injection, verify SSH connectivity:
 ```bash
 timeout 10 ssh $SSH_REMOTE_OPTS ubuntu@<ip> "echo ok" 2>&1
 ```
 
-**If SSH auth fails** (permission denied, not key-auth connection refused):
-- Attempt to inject SSH key automatically:
-  ```bash
-  timeout 120 bash ~/.copilot/skills/cbprovider-domain/scripts/inject.sh <ip>
-  ```
-- If inject succeeds, retry the SSH test.
-- If inject also fails, stop and tell the user to set up SSH access manually.
-
-**If SSH is unreachable** (timeout, connection refused): stop and report the target is offline.
+If SSH still fails after injection, stop and tell the user to set up SSH access manually.
 
 Once SSH works, check generic prerequisites on the target:
 ```bash
